@@ -1,0 +1,15 @@
+node_modules/
+.research/
+.wrangler/
+.venv/
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+coverage/
+dist/
+__pycache__/
+*.pyc
+.DS_Store

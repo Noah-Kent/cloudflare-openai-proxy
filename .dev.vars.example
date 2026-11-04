@@ -1,0 +1,2 @@
+# Local fake credential only. Copy to .dev.vars, which is gitignored.
+PROXY_TOKEN=local-test-token-0123456789abcdef0123456789
