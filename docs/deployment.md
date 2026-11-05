@@ -1,75 +1,109 @@
-# 发布与部署操作单
+# 部署到自己的 Cloudflare
 
-GitHub 源码发布与 Cloudflare 部署分别处理。公开仓库无需配置 Cloudflare 账号或真实域名。Release、Cloudflare 部署/Secret 变更和真实 OpenAI 调用仍需另行授权。以下命令是操作说明。
+完成后，你会得到一个自己的 API 地址，例如 `https://api.example.com/v1`。以下命令适用于 macOS、Linux 或 WSL 的 **Bash**，请在同一个终端中按顺序执行。准备好 Git、Node.js 22 或更高版本（含 npm）、curl，以及一个由你的 Cloudflare 账户管理、状态为 Active 的域名。
 
-## 1. GitHub
+## 1. 下载并安装
 
-本地完整上游历史保留，`upstream` 指向 `https://github.com/barretlee/cloudflare-proxy.git`。发布仓库为 [Noah-Kent/cloudflare-openai-proxy](https://github.com/Noah-Kent/cloudflare-openai-proxy)，保留 GitHub Fork 关系。下列步骤供后续使用者创建自己的 Fork 时参考。
-
-在创建 Fork 并取得推送授权后：
-
-```sh
-git remote add origin https://github.com/YOUR_ACCOUNT/cloudflare-openai-proxy.git
-git fetch origin
-git push -u origin feat/secure-openai-proxy
+```bash
+git clone https://github.com/Noah-Kent/cloudflare-openai-proxy.git
+cd cloudflare-openai-proxy
+npm ci
 ```
 
-建议以 PR 审阅后再合入默认分支；创建 Fork、推送、合入和 Release 分开处理。MIT 原版权声明不得删除。同步上游时先 `git fetch upstream` 检查差异，不覆盖本版认证与测试。
+可以直接克隆并部署。想在自己的 GitHub 保存代码修改时再创建 Fork。需要运行完整开发测试的读者可按 [本地开发与测试](../README.md#本地开发与测试) 安装 Python 依赖。
 
-发布前运行 `npm run scan:secrets`；它分别扫描工作文件、暂存区实际 blob 和可达历史，即使工作文件已清理或删除，暂存区里的凭据仍会被检出。再核对 staged diff 和历史，确认 `.dev.vars`、`.env*`、`.research/` 不被跟踪。扫描器只能发现常见密钥模式，不能作为密钥绝对不存在的证明；若曾提交过真实密钥，先撤销再处理历史，不能只删除当前文件。
+## 2. 登录并选择子域名
 
-## 2. Cloudflare 首次部署
-
-先确认个人账户、Worker 名称、自定义域名、套餐限额、服务地区/政策和预期公开范围。源码无真实配置。默认 `workers_dev=false`、`preview_urls=false`，减少额外入口。
-
-批准后执行：
-
-```sh
-WRANGLER_SEND_METRICS=false npx wrangler login
-WRANGLER_SEND_METRICS=false npx wrangler whoami
+```bash
+npx wrangler login
+npx wrangler whoami
 ```
 
-在 `wrangler.toml` **顶层、`[observability]` 之前**设置自己 Cloudflare zone 的子域名，例如：
+在浏览器核对授权账户和权限。回到终端确认显示的账户拥有目标域名。如果能访问多个账户，请在下一步的私有配置顶层填写目标账户的 `account_id`。
+
+挑选一个空闲子域名。在 Cloudflare 的 DNS 记录和 Workers 自定义域名、路由中检查它是否已指向其他服务。如有冲突，请换一个名称。Cloudflare 会在绑定时管理所需的 DNS 记录和证书。[Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+
+## 3. 设置个人部署配置
+
+从仓库根目录执行。配置副本位于 Git 忽略目录，重复执行会保留已有副本。
+
+```bash
+mkdir -p .wrangler/deploy
+cfg=.wrangler/deploy/wrangler.toml
+cp -n wrangler.toml "$cfg"
+```
+
+用文本编辑器打开 `.wrangler/deploy/wrangler.toml`。在 `[observability]` **上方**修改已有的 `name`、`main` 两行，并添加 `routes`。保留模板里的其余设置。首次部署请用自己账户中尚未使用的 Worker 名称，并把示例域名换成刚检查过的子域名。
 
 ```toml
+name = "my-openai-proxy"
+main = "../../src/worker.js"
 routes = [{ pattern = "api.example.com", custom_domain = true }]
 ```
 
-确认该域名没有需要保留的冲突记录或其他服务。先部署拒绝所有业务请求的版本，再配置 Secret：
+`main` 相对于配置副本所在目录解析。先用同一份配置在本地预演，终端应显示打包成功及 dry-run 结束。
 
-```sh
-npm test
-npm run test:sdk
-WRANGLER_SEND_METRICS=false npm run build
-# 以下两条改变远程资源，须授权：
-WRANGLER_SEND_METRICS=false npm run deploy
-WRANGLER_SEND_METRICS=false npx wrangler secret put PROXY_TOKEN
+```bash
+npx wrangler deploy --dry-run --config "$cfg"
 ```
 
-通过密码管理器生成 32 随机字节的 hex Token，交互输入 Secret；不要将 Token 作为命令行参数、写入 toml、命令历史或聊天。初次部署没有 Secret 时 Worker 会 403，避免先开放再认证。域名证书/DNS 生效后才能测试。
+## 4. 部署并设置 Proxy Token
 
-依据：[Secrets](https://developers.cloudflare.com/workers/configuration/secrets/) · [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)。
+用密码管理器生成并保存一个 64 字符的随机字母数字串，区分大小写。确认上一步的账户、Worker 名称和域名后执行：
 
-## 3. Token 轮换/撤销
+```bash
+npx wrangler deploy --config "$cfg"
+npx wrangler secret put PROXY_TOKEN --config "$cfg"
+```
 
-- 轮换：`npx wrangler secret put PROXY_TOKEN` 输入新随机 Token；更新可信客户端。单 Token 无双密钥过渡期，旧 Token 对后续请求立即失败。
-- 紧急撤销：经批准执行 `npx wrangler secret delete PROXY_TOKEN`；所有受保护请求失败关闭。已转发的请求可能仍继续。
+第一条上传 Worker 并绑定域名。对于新建 Worker，设置 Secret 前，受保护请求会返回 403。第二条提示输入 Secret 时粘贴刚保存的 Proxy Token。看到上传成功后，客户端也使用同一个值。**OpenAI API Key 由客户端单独保存**。将来更新 Secret 时继续使用同一份私有配置。[Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+
+## 5. 验证域名和认证（零模型费用）
+
+将下面的主机名换成你刚部署的域名。证书生效后，在 Bash 里请求模型列表，查看响应状态和 JSON 错误类型。
+
+```bash
+base_url='https://api.example.com/v1'
+curl -q -sS -w '\nHTTP %{http_code}\n' "$base_url/models"
+```
+
+预期为 **HTTP 403**，JSON 中 `error.type` 为 `proxy_error`。这表明该地址已到达 Worker 的认证检查。接下来只发送 Proxy Token，暂时省略 OpenAI Key：
+
+```bash
+IFS= read -rs -p 'Proxy Token（输入隐藏）: ' proxy_token
+printf '\n'
+printf 'X-Proxy-Token: %s\n' "$proxy_token" |
+  curl -q -sS -H @- -w '\nHTTP %{http_code}\n' "$base_url/models"
+unset proxy_token
+```
+
+预期变为 **HTTP 401**，JSON 中仍为 `proxy_error`。这表示 Worker 已接受 Proxy Token，接下来要求 OpenAI Bearer 凭据。两次请求都在 Worker 内结束。如果第二次仍是代理 403，请检查 Secret 名称、目标 Worker、大小写和粘贴内容。如果返回 HTML，请先检查绑定域名、DNS 和 Cloudflare 安全规则。
+
+## 6. 连接客户端
+
+| 客户端设置 | 填写内容 |
+| --- | --- |
+| Base URL | 自己的接口地址，例如 `https://api.example.com/v1` |
+| API Key | 自己的 OpenAI Project API Key，客户端用它发送 `Authorization: Bearer …` |
+| 自定义请求头 | 名称 `X-Proxy-Token`，值为第 4 步保存的 Proxy Token |
+| 模型 | 选择该 OpenAI Project 可用且适合任务的模型 ID |
+
+按所用客户端继续：[Python / Node SDK 示例](../README.md#sdk-示例) · [DeepSeek Harness](deepseek-harness.md) · [Cherry Studio](cherry-studio.md)。首次真实验证可只发一次短文本，并关闭自动重试。生成回复会使用 OpenAI Project 的额度。已验证的客户端、协议与待测项目见 [测试记录](testing.md)。
+
+## Token 轮换/撤销
+
+- 轮换：`npx wrangler secret put PROXY_TOKEN --config .wrangler/deploy/wrangler.toml` 输入新随机 Token；更新可信客户端。单 Token 无双密钥过渡期，旧 Token 对后续请求立即失败。
+- 紧急撤销：经批准执行 `npx wrangler secret delete PROXY_TOKEN --config .wrangler/deploy/wrangler.toml`；所有受保护请求失败关闭。已转发的请求可能仍继续。
 - OpenAI Key 是独立凭据，只能在 OpenAI 平台撤销/重建，不在 Worker 注入替代 Key。
 - 回滚旧 Worker 版本前检查其代码和 Secret 行为，禁止回滚到本项目上游无 Proxy Token 认证的版本。
 
-## 4. 限流与费用
+## 限流与费用
 
-上线前在 Cloudflare zone 的 Security rules → Create rule → Rate limiting rules 创建规则（[官方步骤](https://developers.cloudflare.com/waf/rate-limiting-rules/create-zone-dashboard/)）：匹配此专用 host 和 `/v1/`，按 IP 限制请求速率，使用阻断/429，记录实际套餐可用的计数窗和阈值。个人低流量可从保守阈值开始，但共享出口可能误伤；测试后再调整。不要把两类密钥作为日志字段或公开规则中的字面值。
+需要额外限流时，可在 Cloudflare zone 的 Security rules → Create rule → Rate limiting rules 创建规则（[官方步骤](https://developers.cloudflare.com/waf/rate-limiting-rules/create-zone-dashboard/)）：匹配此专用 host 和 `/v1/`，按 IP 限制请求速率，使用阻断/429，记录实际套餐可用的计数窗和阈值。个人低流量可从保守阈值开始，但共享出口可能误伤；测试后再调整。不要把两类密钥作为日志字段或公开规则中的字面值。
 
 自定义域名规则不会自动保护独立 workers.dev/preview 地址，因此本配置默认禁用它们。不要用 JavaScript 进程内计数器声称全局限流。Workers [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) 是另一方案，但需要实际接入调用；本版未实现该 binding。Cloudflare 分布式限流不是金额硬上限。独立 OpenAI Project/Key、预算告警、模型权限和重试限制一起使用。
 
-## 5. 接口验证
-
-先在不使用任何真实 Key 的情况下检查未认证 `GET /v1/models` 和 `OPTIONS /v1/responses` 均 403；再设置正确 Proxy Token，验证缺少 Bearer 为 401、不支持路径为 404。此阶段不会调用上游。
-
-真实上游验收使用 SDK 示例，先安全设置 `OPENAI_BASE_URL`、两类 Key、`OPENAI_MODEL`，再明确启用 `ALLOW_REAL_API=1`。逐个低成本请求，不做循环压测，不在 `curl -v`、HAR、截图或日志展示认证头。连接测试也可能产生模型费用。
-
-## 6. 故障定位
+## 故障定位
 
 | 现象 | 优先检查 |
 | --- | --- |
@@ -85,3 +119,7 @@ WRANGLER_SEND_METRICS=false npx wrangler secret put PROXY_TOKEN
 | 无法访问域名 | DNS、证书、route、workers_dev 默认禁用、自定义域名所属 zone |
 
 [Workers 限制](https://developers.cloudflare.com/workers/platform/limits/) 涉及内存、CPU、请求体大小与连接；流转发减少缓冲并不消除平台限制。真实长连接和边缘取消尚未验收，不能用 100ms 本地延迟模拟替代。
+
+## 维护自己的 Fork（可选）
+
+若要公开自己的修改，在 GitHub 创建 Fork，克隆自己的 Fork 后按常规分支与 PR 流程提交。保留 MIT 原版权声明。发布前运行 `npm run scan:secrets` 并核对暂存差异，确认提交中只有通用模板、占位符与预期改动。个人部署文件保存在 Git 忽略目录。

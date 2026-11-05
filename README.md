@@ -8,9 +8,13 @@
 
 Worker 无第三方运行依赖，不保存 OpenAI Key，不转换 OpenAI 协议，不解析 JSON/SSE。真实部署和使用必须符合 OpenAI 服务地区及使用政策；本项目不用于绕过地区限制。不要把凭据放入公开网页、公开仓库或分发给他人的客户端安装包。
 
-## 当前交付状态
+## 部署到我的 Cloudflare
 
-本地开发和 Mock 验证已完成。本仓库保留上游 Fork 关系；尚未部署或调用真实 OpenAI API。Python/Node SDK 已连接本地 workerd 和 Mock 上游验证；Cherry Studio/DeepSeek Harness 已做源码审查和请求模拟，**真实客户端连接已部署 Worker 仍待验证**。详见 [测试报告与验收清单](docs/testing.md)。
+准备一个由 Cloudflare 管理的域名和一个空闲子域名。从克隆项目开始，按步骤完成登录、预演、部署和认证检查。前两次接口检查无需 OpenAI Key，也不产生模型费用。[开始部署](docs/deployment.md)
+
+## 项目验证状态
+
+截至 2026-11-05，官方 Python 和 Node SDK 通过已部署 Worker 的 8 项真实请求测试。DeepSeek Harness 已完成基础文本实测，重启后已确认推理等级菜单显示。Cherry Studio 已完成源码审查与模拟请求，真实客户端验收待完成。[测试记录](docs/testing.md) · [Harness 配置及设置页保存限制](docs/deepseek-harness.md)
 
 ## 认证与端点
 
@@ -21,7 +25,7 @@ Authorization: Bearer OPENAI_API_KEY
 X-Proxy-Token: YOUR_PROXY_TOKEN
 ```
 
-`PROXY_TOKEN` 只存 Cloudflare Secret。使用随机生成的 32–256 字符 Token，仅允许字母、数字、`_`、`-`（推荐 32 随机字节转 64 位十六进制）。Worker 先验证代理 Token：缺失、错误、配置缺失或格式无效均 403；随后检查 Bearer 格式，失败返回 401。有效代理认证不代表 OpenAI Key 有效，后者由 OpenAI 验证。Token 经 SHA-256 后用 Workers 原生 `timingSafeEqual` 比较；转发删除代理 Token，保留原 Authorization。
+Worker 端把 `PROXY_TOKEN` 存为 Cloudflare Secret，客户端安全保存同一值。使用随机生成的 32–256 字符 Token，仅允许字母、数字、`_`、`-`（推荐 32 随机字节转 64 位十六进制）。Worker 先验证代理 Token：缺失、错误、配置缺失或格式无效均 403；随后检查 Bearer 格式，失败返回 401。有效代理认证不代表 OpenAI Key 有效，后者由 OpenAI 验证。Token 经 SHA-256 后用 Workers 原生 `timingSafeEqual` 比较；转发删除代理 Token，保留原 Authorization。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -60,7 +64,7 @@ WRANGLER_SEND_METRICS=false npm run dev
 
 ## SDK 示例
 
-环境变量：`OPENAI_BASE_URL=https://YOUR_DOMAIN/v1`、`OPENAI_API_KEY`、`PROXY_TOKEN`、`OPENAI_MODEL`。两种 Key 必须分别填写；模型选择账户实际可用且适合测试的低成本模型，不在代理内固定模型。
+环境变量：`OPENAI_BASE_URL=https://api.example.com/v1`、`OPENAI_API_KEY`、`PROXY_TOKEN`、`OPENAI_MODEL`。两种 Key 必须分别填写；模型选择账户实际可用且适合测试的低成本模型，不在代理内固定模型。
 
 取得真实调用授权后，在本机安全注入上述变量并设置 `ALLOW_REAL_API=1`，再逐个运行：
 
@@ -95,7 +99,7 @@ node examples/node/client.mjs stream
 
 使用独立 OpenAI Project 和最小权限 API Key，设置预算/费用告警、模型权限和速率限制。**告警不是绝对费用硬上限**；若账户提供可执行支出限制，需单独核实设置及适用范围。[OpenAI 官方说明](https://developers.openai.com/api/docs/guides/terraform/rate-limits-and-spend)
 
-上线前配置 Cloudflare 自定义域名的 WAF Rate Limiting：按域名、`/v1/` 路径及客户端 IP 限制短时请求，阈值按个人流量与套餐确定，动作选阻断/429，先低流量验收。本版无内存计数器、无全局金额限额；仅创建一个 Rate Limit binding 并不会自动生效。详见 [部署与撤销](docs/deployment.md)。
+按需配置 Cloudflare 自定义域名的 WAF Rate Limiting：按域名、`/v1/` 路径及客户端 IP 限制短时请求，阈值按个人流量与套餐确定，动作选阻断/429，先低流量验收。本版无内存计数器、无全局金额限额；仅创建一个 Rate Limit binding 并不会自动生效。详见 [部署与撤销](docs/deployment.md)。
 
 Proxy Token 泄露后更新 Secret（旧 Token 立即对后续请求失效），分发新 Token，并检查异常流量；若 OpenAI Key 也可能泄露，另行撤销并重建 OpenAI Key。撤销代理 Token 不会撤销已送到上游的请求。
 

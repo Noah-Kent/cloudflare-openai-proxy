@@ -1,8 +1,8 @@
 # 测试结果与真实验收清单
 
-日期：2026-11-04。验证对象：本分支 `src/worker.js` 及随附示例；最终本地提交可用 `git log -1` 获取。没有调用真实 OpenAI API，没有部署，没有运行第三方真实客户端。
+更新日期：2026-11-05。验证对象：本分支 `src/worker.js` 及随附示例。以下保留原有 Mock 回归记录，并补充已部署 Worker 的真实 SDK 测试和用户执行的 Harness 基础文本测试；它们是不同层次的证据。本次文档整理未修改 Worker、未追加付费调用。对应公开源码版本为 `3abcde8`；下列真实结果不等于全部端点、模型和客户端功能均通过。
 
-## 已执行结果
+## 已执行的本地 Mock 与发布前检查（历史记录）
 
 | 检查 | 结果 | 能证明的范围 |
 | --- | --- | --- |
@@ -27,7 +27,7 @@
 - SSE 多事件、注释、CRLF、UTF-8 跨块、顺序；不预读完整响应。压缩回归用原始 HTTP 客户端 → workerd → HTTP 字节桥 → 本地 gzip 上游，验证 JSON、SSE、429 的编码头、解压内容及压缩字节一致；不使用会自动解压的客户端来判断线上字节，也不以 Node Response 注入测试代替 workerd 行为。
 - Node 核心测试验证请求信号、响应 cancel、流错误、20 请求并发；实际本地 HTTP 断开在代理 Worker 与 Mock Worker 之间验证取消信号/流取消。初版 Node outboundService 桥接 Mock 未观测到 cancel，改用两个 workerd isolate，未为迁就 Mock 改生产实现。
 - 两个 SDK 各 9 项：模型列表、Responses 普通/流式/工具/结构化、Chat 普通/流式/工具、429。交付示例每种语言再运行 6 个模式。所有模型和响应均为测试构造，不证明任何真实模型支持该能力。
-- Cherry/DeepSeek 模拟是构造同类 Header 和路径，没有运行它们的程序，因此不标记真实客户端通过。
+- Cherry/DeepSeek 模拟是构造同类 Header 和路径；这些模拟本身不证明真实客户端兼容，后续实测单独记录如下。
 
 ## 首次复查修复（已提交于 `2c841b7`）
 
@@ -48,27 +48,53 @@
 
 本轮重跑基础测试、SDK 测试、65 秒长流、Wrangler 本地 dry-run、密钥扫描和差异检查；依赖未变，依赖审计沿用当日既有结果。源码改动与回归覆盖另经只读独立复查。所有测试只使用本地 Mock，无真实 API 调用、推送或部署。
 
+## 真实部署与低成本测试
+
+2026-11-04 经授权完成个人 Worker 自定义域名部署。未认证 GET models、POST responses、OPTIONS responses 返回代理 403；正确 Proxy Token 下，缺少/错误 Bearer 分别返回 401，不支持路径返回 404，不支持方法返回 405。这些拒绝场景没有携带可用 OpenAI Key，也没有触发模型生成；上游调用阻断机制另由 Mock 断言验证。
+
+当日，官方 SDK 经已部署 Worker 的真实测试使用 gpt-4.1-mini，8 次模型请求、自动重试 0、每次输出上限 128 tokens，全部 HTTP 200 且完成状态符合预期：
+
+| 客户端 | 真实场景 | 结果 |
+| --- | --- | --- |
+| Python OpenAI 2.48.0 | Responses 普通文本、流式文本、函数调用输出、结构化输出 | 4/4 通过 |
+| Node OpenAI 7.50.0 | Responses 普通文本、流式文本；Chat 普通文本、流式文本 | 4/4 通过 |
+
+两次 Responses 流各观测到 9 个 SDK 事件并以 response.completed 结束；Chat 流记录 4 个 SDK 事件并正常 stop。函数调用仅检查返回的调用结构，没有执行函数或回传工具结果。SDK 报告合计输入 156、输出 18 tokens；实际账单以 OpenAI 为准，不用此数据推算 Harness 的费用。
+
+同日，DeepSeek Harness 0.2.1-rc.5 经独立代理 Provider 使用 gpt-4.1-mini 完成一次基础文本问答。客户端配置为 Responses + SSE，验收依据为真实界面的完成状态。逐事件网络轨迹、工具闭环、长流和取消仍待验证。配置方式见 [Harness 文档](deepseek-harness.md)。
+
+## 2026-11-05 Harness 推理等级配置回归
+
+本机 0.2.1-rc.5 的三个代理模型补齐 reasoningEfforts。修复前检查能检出三项缺失；修复后，安装版能力解析函数生成正确的选择器元数据，非法档位被拒绝。实际 pi-ai Responses 请求序列化与本地 Node Worker 透传共 19 个场景通过：Astra/Sol 各 5 档、Terra 6 档，另加三个模型的默认行为。Worker 测试注入 Node 的安全比较原语和假上游，不是本次 workerd/真实边缘验收。
+
+真实 Key/Token 未读取，网络被拦截，未发生付费调用。仅新增本机配置字段与文档，未改 Worker、未升级 Harness；原有 Mock/真实测试记录仍为历史记录，本轮未全量重跑。2026-11-05 用户重启后确认推理等级已出现。该反馈证明选项显示问题已解决；未单独记录三个模型逐项截图或逐档真实 API 结果。具体映射见 [Harness 文档](deepseek-harness.md)。
+
 ## 兼容性分层
 
 | 客户端 | 静态配置审查 | Mock/本地 Worker | 真实 OpenAI + 已部署 Worker |
 | --- | --- | --- | --- |
-| 官方 Node SDK 7.50.0 | 通过 | SDK 与示例通过 | 待授权 |
-| 官方 Python SDK 2.48.0 | 通过 | SDK 与示例通过 | 待授权 |
+| 官方 Node SDK 7.50.0 | 通过 | SDK 与示例通过 | 上述 4 项通过，其余待验证 |
+| 官方 Python SDK 2.48.0 | 通过 | SDK 与示例通过 | 上述 4 项通过，其余待验证 |
 | Cherry Studio 源码 2.1.10 | 自定义头/Responses 确认 | 同类请求模拟通过 | 未安装运行，待验证 |
-| DeepSeek Harness 源码 0.2.2-alpha.3 | Provider/headers/协议确认 | 同类请求模拟通过 | 本机 0.2.1-rc.5，未运行，待验证 |
+| DeepSeek Harness 源码 0.2.2-alpha.3 | Provider/headers/协议确认 | 同类请求模拟通过 | 本机 0.2.1-rc.5 基础文本通过，其余待验证 |
 
-## 真实验收（未经授权不执行）
+## 剩余真实验收
 
-先明确测试域名、四个客户端版本、低成本模型、调用次数与费用范围，分别取得部署和真实调用授权。模型权限、SDK 解析、Worker 传输分开记录。不做无意义高频压测；失败先分析，关闭重试。
+以下为剩余验收项；已完成部分见上方真实结果。扩大测试前明确客户端版本、模型、调用次数与费用范围，并遵守当次授权。模型权限、SDK 解析、Worker 传输分开记录。不做无意义高频压测；失败先分析，关闭重试。
 
-- [ ] 无 Proxy Token/错误 Token → 403；正确 Token 缺少 Bearer → 401；非法路径/方法 → 404/405；确认无上游访问。
-- [ ] 正确 Proxy Token + 无效 OpenAI Key → 保留上游 401；有效 Key → 最短普通响应。
-- [ ] Node、Python：Responses 普通、stream、工具调用；结构化输出仅选支持模型；Chat 普通、stream、工具调用；保存状态码/Request ID，不存 Key 或敏感内容。
-- [ ] 工具调用再由测试客户端返回无副作用结果，确认多轮 function_call_output/tool message 的闭环；不要让 Harness 执行真实 shell/文件修改。
-- [ ] 真实 SSE 事件序列包含完成或错误事件；分清 incomplete、截断与正常结束。记录首字节、总时长、请求次数与输出上限。
-- [ ] 单次经过批准的长响应及中途停止；检查客户端停止、连接关闭、上游用量。断开不保证已生成 token 不计费。
-- [ ] Cherry：模型列表、连接检查、Chat、Responses 普通/流式、停止、工具功能；记录实际设置入口和 Header 存在情况。
-- [ ] Harness：实际安装版识别 profile patch/环境表达式、独立两类凭据、模型发现、两个协议、SSE、工具调用及取消；确认未自动切换官方 DeepSeek/其他真实 Provider。
-- [ ] Cloudflare 自定义域名/DNS/证书、WAF 限流、Secrets 轮换/撤销、无缓存、平台日志脱敏。
+- [x] 代理拒绝场景和有效 Key 的最短响应：范围见上方记录；上游阻断的调用计数由 Mock 验证。
+- [x] Python Responses 普通/流式/函数调用输出/结构化；Node Responses 与 Chat 普通/流式。
+- [x] Harness 实际界面的基础文本调用。
+- [ ] 正确 Proxy Token + 无效 OpenAI Key 的真实上游 401（Mock 已覆盖）。
+- [ ] 其余 SDK 真实场景：Node Responses 工具/结构化、Python Chat 普通/流式、两种 SDK 的 Chat 工具调用。
+- [ ] 工具调用再由客户端返回无副作用结果，确认多轮 function_call_output/tool message 闭环；不执行真实 shell/文件修改。
+- [ ] 真实长响应及中途停止，检查连接关闭、用量与事件终态；断开不保证已生成 token 不计费。Mock 的长流和取消不能代替这项。
+- [ ] Cherry：模型列表、连接检查、Chat、Responses 普通/流式、停止、工具功能。
+- [ ] Harness：模型发现、Chat 协议、逐事件 SSE、工具闭环、取消和其他模型；确认未切换至其他 Provider。
+- [x] Harness 重启后推理等级显示：2026-11-05 用户确认；三个模型的能力映射另由本地检查验证。
+- [ ] 各模型逐档真实 API 接受情况及默认行为验收。
+- [ ] Secrets 轮换/撤销演练、真实边缘无缓存和日志脱敏复核。DNS/证书可达及禁用额外入口已有记录；本次未重新查询远程状态。
+
+启用 Cloudflare 限流规则的部署者应按实际配置另行验收。
 
 不要为得到 429/500 而大量调用真实接口；这些故障已由 Mock 覆盖。真实环境自然出现时记录脱敏证据即可。真实服务地区和使用政策遵从由部署与使用方核实。
