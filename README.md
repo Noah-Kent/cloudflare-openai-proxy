@@ -1,16 +1,26 @@
 # Cloudflare OpenAI Proxy
 
-面向可信服务端、个人开发环境和支持自定义 Header 的桌面客户端的轻量 OpenAI HTTP 代理。基于 [barretlee/cloudflare-proxy](https://github.com/barretlee/cloudflare-proxy)，保留完整上游提交历史及 [MIT License](LICENSE) 中的原作者版权声明。
-
-```
-客户端（OpenAI Key + Proxy Token） → Cloudflare Worker → https://api.openai.com
-```
-
-Worker 无第三方运行依赖，不保存 OpenAI Key，不转换 OpenAI 协议，不解析 JSON/SSE。真实部署和使用必须符合 OpenAI 服务地区及使用政策；本项目不用于绕过地区限制。不要把凭据放入公开网页、公开仓库或分发给他人的客户端安装包。
+用这个项目，你可以在自己的 Cloudflare 账号下搭建一个专用的 OpenAI 接口地址。比如你写了一个 Python 程序，又在用 DeepSeek Harness，两边都可以填同一个地址。Cloudflare 上运行的小程序（Worker）会先检查谁有权使用这个地址，再把请求转给 OpenAI，最后把回复传回客户端。
 
 ## 部署到我的 Cloudflare
 
-准备一个由 Cloudflare 管理的域名和一个空闲子域名。从克隆项目开始，按步骤完成登录、预演、部署和认证检查。前两次接口检查无需 OpenAI Key，也不产生模型费用。[开始部署](docs/deployment.md)
+先准备一个 Cloudflare 账号、一个已由它管理的域名，以及一个空闲的子域名。电脑上需要 Git 和 Node.js 22 或更高版本。跟着指南在终端逐条执行命令，就能部署并检查自己的地址。前两项检查只验证地址和访问口令，无需 OpenAI API Key，也不会产生模型费用。
+
+**[从这里开始：一步一步部署到自己的 Cloudflare](docs/deployment.md)**
+
+## 在客户端里怎么填？
+
+假设你为代理选的域名是 `api.example.com`。部署完成后，在支持自定义请求头的客户端里填下面三项。示例域名要换成你自己的。
+
+| 客户端里的设置 | 填什么 | 有什么用 |
+| --- | --- | --- |
+| API 地址（Base URL） | `https://api.example.com/v1` | 告诉客户端把请求发到哪里。保留末尾的 `/v1`。 |
+| API Key | 你在 OpenAI 项目中创建的 API Key | 调用模型时，OpenAI 用它验证权限，费用计入对应项目。 |
+| 自定义请求头（Custom Header） | 名称填 `X-Proxy-Token`，值填部署时自己生成的 Proxy Token | 这是你给代理设置的访问口令，必须与保存在 Cloudflare 的值一致。 |
+
+两种凭据都应保存在可信客户端或服务端。请勿把它们放进公开网页、代码仓库或分发给他人的安装包。部署和使用须遵守 OpenAI 的服务地区及使用政策。
+
+选择你的客户端继续设置：[Python / Node.js 示例](#sdk-示例) · [DeepSeek Harness](docs/deepseek-harness.md) · [Cherry Studio](docs/cherry-studio.md)
 
 ## 项目验证状态
 
@@ -87,6 +97,8 @@ node examples/node/client.mjs stream
 
 ## 转发与安全边界
 
+Worker 使用 Cloudflare 原生接口，无第三方运行依赖。它直接转发请求和响应流，OpenAI Key 只随请求传递。
+
 - 固定 HTTPS 上游，路径精确匹配、Query 原样传递。参数或 Header 无法改变上游地址。URL 标准化可能折叠点路径，但最终允许列表和认证始终执行。
 - 原始请求体、响应体及 SSE 流直接转发，不预读整流、不按 `stream` 参数改变解析行为。状态码和必要响应头保留；上游重定向特意转成 502，防止客户端自动跟随并泄露双 Token。
 - 请求 Header 采用必要字段允许列表：Authorization、Content-Type/Encoding、Accept/Encoding、User-Agent、OpenAI-Organization/Project/Beta、Idempotency-Key、X-Client-Request-Id、X-Stainless-*。其他字段默认删除；Host、Content-Length、Cookie、代理凭据和逐跳 Header 不透传。新增必要 Header 应加测试。
@@ -104,6 +116,8 @@ node examples/node/client.mjs stream
 Proxy Token 泄露后更新 Secret（旧 Token 立即对后续请求失效），分发新 Token，并检查异常流量；若 OpenAI Key 也可能泄露，另行撤销并重建 OpenAI Key。撤销代理 Token 不会撤销已送到上游的请求。
 
 ## 项目记录
+
+项目基于 [barretlee/cloudflare-proxy](https://github.com/barretlee/cloudflare-proxy)，保留完整上游提交历史和 [MIT License](LICENSE) 中的原作者版权声明。
 
 [上游审查及最小设计](docs/audit.md) · [测试状态](docs/testing.md) · [部署说明](docs/deployment.md)
 
