@@ -2,6 +2,14 @@
 
 用这个项目，你可以在自己的 Cloudflare 账号下搭建一个专用的 OpenAI 接口地址。比如你写了一个 Python 程序，又在用 DeepSeek Harness，两边都可以填同一个地址。Cloudflare 上运行的小程序（Worker）会先检查谁有权使用这个地址，再把请求转给 OpenAI，最后把回复传回客户端。
 
+## 当前决定与适用范围（2026-11-08）
+
+项目保留，后续作为私有代码仓库维护。自用方式调整为：计划停用 Cloudflare 代理和 DeepSeek Harness 的代理通道，保留官方直连配置；停用操作由维护者自行完成。以下部署说明与测试记录保留供今后参考，历史测试通过不代表当前代理仍在运行。
+
+- **服务地区限制仍然适用。** 在 OpenAI 不支持的国家或地区使用本项目访问 API，可能违反其地区使用政策，并导致账号被封禁或暂停。通过 Cloudflare 中转不构成地区政策豁免，网络连通也不代表获准使用。中国大陆目前不在 API 支持地区名单中，旅行时也应核对当前政策。参见 [OpenAI API 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)及[不支持地区与旅行期间的访问说明](https://help.openai.com/en/articles/9131992-chatgpt-and-api-services-in-unsupported-countries-and-territories)。
+- **在支持地区内，可作为尝试改善访问速度的可选方案。** 如果直连官方 API 较慢，可以对比直连与代理的实际表现；只有在同一模型、相近请求和网络条件下实测更快时，才把它作为加速方式。代理不保证降低延迟或提高稳定性，也可能更慢，并增加一个故障环节。本项目尚未进行直连与代理的性能对比测试。
+- **直连正常时，优先直连。** 代理提供统一入口和独立 Proxy Token 访问控制，但客户端仍需持有 OpenAI API Key。没有明确收益时，无需为个人调用额外运行代理。保留官方直连配置同样不免除地区与使用政策要求。
+
 ## 部署到我的 Cloudflare
 
 先准备一个 Cloudflare 账号、一个已由它管理的域名，以及一个空闲的子域名。电脑上需要 Git 和 Node.js 22 或更高版本。跟着指南在终端逐条执行命令，就能部署并检查自己的地址。前两项检查只验证地址和访问口令，无需 OpenAI API Key，也不会产生模型费用。
