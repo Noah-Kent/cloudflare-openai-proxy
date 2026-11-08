@@ -1,12 +1,21 @@
 # Cloudflare OpenAI Proxy
 
+## 公开期公告（2026-11-08）
+
+**本仓库目前保持公开，计划在本公告发布 60 天后，即 2027 年 1 月 7 日（北京时间）转为私有。** 这是维护者对项目维护方式的调整，提前公告以便已经使用本项目的用户做好准备。
+
+- 如需继续使用，请在上述日期前 Fork、克隆或下载代码，并保存部署文档和所需版本。继续分发时请保留原有 MIT License 和版权声明。
+- 转为私有后，未获授权的用户将无法访问本仓库，依赖本仓库拉取源码的构建或部署流程也可能失败，请提前改用自己保存的仓库。已有公开 Fork 不会随本仓库一同转为私有，参见 [GitHub 可见性说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)。
+- 仓库可见性变化本身不会停用你已部署到自己 Cloudflare 账号下的 Worker；后续运行、维护及政策合规由部署者自行负责。本项目提供自行部署的代码，不提供公共 API 服务。
+- **使用代理仍须遵守 OpenAI 的地区与使用政策。** 请先阅读下方使用边界，不能把技术连通或测试通过视为获准在任何地区使用。
+
 用这个项目，你可以在自己的 Cloudflare 账号下搭建一个专用的 OpenAI 接口地址。比如你写了一个 Python 程序，又在用 DeepSeek Harness，两边都可以填同一个地址。Cloudflare 上运行的小程序（Worker）会先检查谁有权使用这个地址，再把请求转给 OpenAI，最后把回复传回客户端。
 
 ## 当前决定与适用范围（2026-11-08）
 
-项目保留，后续作为私有代码仓库维护。自用方式调整为：计划停用 Cloudflare 代理和 DeepSeek Harness 的代理通道，保留官方直连配置；停用操作由维护者自行完成。以下部署说明与测试记录保留供今后参考，历史测试通过不代表当前代理仍在运行。
+项目保留，仓库按上述 60 天公告期保持公开。维护者的自用方式调整为：计划停用 Cloudflare 代理和 DeepSeek Harness 的代理通道，保留官方直连配置；停用操作由维护者自行完成。以下部署说明与测试记录保留供今后参考，历史测试通过不代表当前代理仍在运行。
 
-- **服务地区限制仍然适用。** 在 OpenAI 不支持的国家或地区使用本项目访问 API，可能违反其地区使用政策，并导致账号被封禁或暂停。通过 Cloudflare 中转不构成地区政策豁免，网络连通也不代表获准使用。中国大陆目前不在 API 支持地区名单中，旅行时也应核对当前政策。参见 [OpenAI API 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)及[不支持地区与旅行期间的访问说明](https://help.openai.com/en/articles/9131992-chatgpt-and-api-services-in-unsupported-countries-and-territories)。
+- **服务地区限制仍然适用。** 在 OpenAI 不支持的国家或地区使用本项目访问 API，可能违反其地区使用政策，并导致账号被封禁或暂停。地区要求涉及实际从哪里使用以及向哪里提供访问，不能仅凭代理服务器或最后一跳 IP 位于支持地区判断合规。通过 Cloudflare 中转不构成地区政策豁免，网络连通也不代表获准使用。中国大陆目前不在 API 支持地区名单中，旅行时也应核对当前政策。参见 [OpenAI API 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)及[不支持地区与旅行期间的访问说明](https://help.openai.com/en/articles/9131992-chatgpt-and-api-services-in-unsupported-countries-and-territories)。
 - **在支持地区内，可作为尝试改善访问速度的可选方案。** 如果直连官方 API 较慢，可以对比直连与代理的实际表现；只有在同一模型、相近请求和网络条件下实测更快时，才把它作为加速方式。代理不保证降低延迟或提高稳定性，也可能更慢，并增加一个故障环节。本项目尚未进行直连与代理的性能对比测试。
 - **直连正常时，优先直连。** 代理提供统一入口和独立 Proxy Token 访问控制，但客户端仍需持有 OpenAI API Key。没有明确收益时，无需为个人调用额外运行代理。保留官方直连配置同样不免除地区与使用政策要求。
 
